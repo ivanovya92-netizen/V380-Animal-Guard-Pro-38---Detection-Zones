@@ -1,0 +1,11 @@
+<resources>
+    <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/apex_blue</item>
+        <item name="colorPrimaryVariant">@color/apex_deep</item>
+        <item name="colorSecondary">@color/apex_orange</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:statusBarColor">@color/apex_deep</item>
+        <item name="android:navigationBarColor">@color/apex_deep</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

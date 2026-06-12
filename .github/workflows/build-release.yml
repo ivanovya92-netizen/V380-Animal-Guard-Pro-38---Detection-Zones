@@ -24,7 +24,8 @@ jobs:
         run: |
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Unpack Android project safely
+      - name: Prepare Android project
+        id: prep
         shell: bash
         run: |
           set -e
@@ -32,51 +33,67 @@ jobs:
           pwd
           echo "Root files:"
           ls -la
-          rm -rf build-src unpack-safe
-          mkdir -p build-src unpack-safe
-          SOURCE_ZIP=""
 
-          if [ -f "V380AnimalGuardPro38_Source.zip" ]; then
-            SOURCE_ZIP="V380AnimalGuardPro38_Source.zip"
+          PROJECT_DIR=""
+
+          # Case 1: project is already uploaded/extracted directly in the repo root
+          if [ -d "app" ] && [ -f "settings.gradle" ] && [ -f "app/build.gradle" ]; then
+            echo "Detected direct Android project at repo root."
+            PROJECT_DIR="."
           fi
 
-          if [ -z "$SOURCE_ZIP" ]; then
+          # Case 2: source zip is uploaded in repo root
+          if [ -z "$PROJECT_DIR" ] && [ -f "V380AnimalGuardPro38_Source.zip" ]; then
+            echo "Detected V380AnimalGuardPro38_Source.zip in repo root."
+            rm -rf build-src
+            mkdir -p build-src
+            unzip -q "V380AnimalGuardPro38_Source.zip" -d build-src
+            PROJECT_DIR="build-src"
+          fi
+
+          # Case 3: GitHubSafePack zip is uploaded; unpack it and then unpack source zip inside it
+          if [ -z "$PROJECT_DIR" ]; then
             SAFE_PACK="$(find . -maxdepth 3 -type f -name 'V380AnimalGuardPro38_GitHubSafePack*.zip' | head -n 1 || true)"
             if [ -n "$SAFE_PACK" ]; then
-              echo "Found safe pack: $SAFE_PACK"
+              echo "Detected safe pack: $SAFE_PACK"
+              rm -rf unpack-safe build-src
+              mkdir -p unpack-safe build-src
               unzip -q "$SAFE_PACK" -d unpack-safe
               SOURCE_ZIP="$(find unpack-safe -type f -name 'V380AnimalGuardPro38_Source.zip' | head -n 1 || true)"
+              if [ -n "$SOURCE_ZIP" ]; then
+                echo "Detected source zip inside safe pack: $SOURCE_ZIP"
+                unzip -q "$SOURCE_ZIP" -d build-src
+                PROJECT_DIR="build-src"
+              fi
             fi
           fi
 
-          if [ -z "$SOURCE_ZIP" ]; then
-            SOURCE_ZIP="$(find . -maxdepth 5 -type f -name 'V380AnimalGuardPro38_Source.zip' | head -n 1 || true)"
-          fi
-
-          if [ -z "$SOURCE_ZIP" ]; then
-            echo "ERROR: Cannot find V380AnimalGuardPro38_Source.zip"
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Cannot locate Android project."
+            echo "Expected either:"
+            echo "1) repo root contains app/, settings.gradle and app/build.gradle"
+            echo "2) V380AnimalGuardPro38_Source.zip exists in repo root"
+            echo "3) V380AnimalGuardPro38_GitHubSafePack.zip exists and contains the source zip"
             find . -maxdepth 5 -type f | sort
             exit 9
           fi
 
-          echo "Using source zip: $SOURCE_ZIP"
-          unzip -q "$SOURCE_ZIP" -d build-src
-          ls -la build-src
-          test -d build-src/app
-          test -f build-src/settings.gradle
-          test -f build-src/app/build.gradle
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Using PROJECT_DIR=$PROJECT_DIR"
+          test -d "$PROJECT_DIR/app"
+          test -f "$PROJECT_DIR/settings.gradle"
+          test -f "$PROJECT_DIR/app/build.gradle"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build signed release APK
-        working-directory: build-src
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: gradle -p "$PROJECT_DIR" assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK and show size
         run: |
           mkdir -p output
-          cp build-src/app/build/outputs/apk/release/app-release.apk output/V380AnimalGuardPro38-release.apk
+          cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" output/V380AnimalGuardPro38-release.apk
           ls -lh output/V380AnimalGuardPro38-release.apk
 
       - name: Upload signed release APK
